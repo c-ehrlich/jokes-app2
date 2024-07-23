@@ -9,8 +9,17 @@
 import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
+import { env } from "~/env";
 
 import { db } from "~/server/db";
+import {
+  getActiveTraceId,
+  getTraceLink,
+  JOKES_APP_TRACER_NAME,
+} from "../tracing/utils";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
+
+import packageJson from "../../../package.json";
 
 /**
  * 1. CONTEXT
@@ -83,9 +92,16 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
   const start = Date.now();
 
   if (t._config.isDev) {
+    const span = trace
+      .getTracer(JOKES_APP_TRACER_NAME)
+      .startSpan("trpc.middleware.timing");
+
     // artificial delay in dev
     const waitMs = Math.floor(Math.random() * 400) + 100;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+    span.setAttribute("trpc.middleware.timing.waitMs", waitMs);
+    span.end();
   }
 
   const result = await next();
@@ -96,6 +112,39 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
   return result;
 });
 
+const traceIdMiddleware = t.middleware(async ({ ctx, next, path }) => {
+  return trace
+    .getTracer("trpc")
+    .startActiveSpan("trpc.procedure", async (span) => {
+      span.setAttributes({
+        "trpc.path": path,
+        "trpc.version": packageJson.dependencies["@trpc/server"],
+      });
+
+      const res = await next({
+        ctx: ctx,
+      });
+
+      if (!res.ok) {
+        span.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: res.error.message,
+        });
+      }
+
+      if (env.NODE_ENV === "development") {
+        const traceId = getActiveTraceId();
+        console.log(
+          `>>> ${path} - ${getTraceLink(traceId ?? "TRACE_ID_MISSING")}`,
+        );
+      }
+
+      span.end();
+
+      return res;
+    });
+});
+
 /**
  * Public (unauthenticated) procedure
  *
@@ -103,4 +152,6 @@ const timingMiddleware = t.middleware(async ({ next, path }) => {
  * guarantee that a user querying is authorized, but you can still access user session data if they
  * are logged in.
  */
-export const publicProcedure = t.procedure.use(timingMiddleware);
+export const publicProcedure = t.procedure
+  .use(traceIdMiddleware)
+  .use(timingMiddleware);
