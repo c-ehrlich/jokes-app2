@@ -1,53 +1,75 @@
-import Link from "next/link";
+"use client";
 
-import { LatestPost } from "~/app/_components/post";
-import { api, HydrateClient } from "~/trpc/server";
+import { useState } from "react";
+import { api } from "~/trpc/react";
 
-export default async function Home() {
-  const hello = await api.post.hello({ text: "from tRPC" });
+export default function Page() {
+  const utils = api.useUtils();
 
-  void api.post.getLatest.prefetch();
+  const [topic, setTopic] = useState("");
+
+  const jokes = api.jokes.getAll.useQuery();
+
+  const createJoke = api.jokes.create.useMutation({
+    onSuccess: async () => {
+      await utils.invalidate();
+      setTopic("");
+    },
+  });
+
+  const deleteJoke = api.jokes.delete.useMutation({
+    onSuccess: async () => {
+      await utils.invalidate();
+    },
+  });
 
   return (
-    <HydrateClient>
-      <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
-        <div className="container flex flex-col items-center justify-center gap-12 px-4 py-16">
-          <h1 className="text-5xl font-extrabold tracking-tight sm:text-[5rem]">
-            Create <span className="text-[hsl(280,100%,70%)]">T3</span> App
-          </h1>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-8">
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-              href="https://create.t3.gg/en/usage/first-steps"
-              target="_blank"
+    <div className="container flex max-w-2xl flex-col items-center justify-center gap-4 p-4">
+      <h1 className="text-4xl font-bold">Jokes App</h1>
+      <div className="flex w-full gap-2">
+        <input
+          className="w-full border border-white bg-gray-800 p-2"
+          type="text"
+          placeholder="Topic"
+          value={topic}
+          onChange={(e) => setTopic(e.target.value)}
+        />
+        <button
+          className="border border-white bg-green-800 p-2 hover:bg-green-600"
+          onClick={() => createJoke.mutate({ topic: topic })}
+        >
+          Generate joke
+        </button>
+      </div>
+      <h2 className="text-2xl">All jokes</h2>
+      {jokes.isPending && <p>Loading jokes...</p>}
+      {jokes.isError && <p>Error loading jokes: {jokes.error.message}</p>}
+      {jokes.data?.length === 0 && (
+        <p>No jokes found. Let&apos;s generate some!</p>
+      )}
+      {jokes.data?.map((joke) => (
+        <div
+          key={joke.id}
+          className="flex w-full flex-col border border-black p-2"
+        >
+          <div className="flex w-full justify-between gap-2">
+            <h2 className="text-2xl font-bold">{joke.topic}</h2>
+            <button
+              className="border border-white bg-red-800 p-2 hover:bg-red-600"
+              onClick={() => deleteJoke.mutate({ id: joke.id })}
             >
-              <h3 className="text-2xl font-bold">First Steps →</h3>
-              <div className="text-lg">
-                Just the basics - Everything you need to know to set up your
-                database and authentication.
-              </div>
-            </Link>
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-              href="https://create.t3.gg/en/introduction"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">Documentation →</h3>
-              <div className="text-lg">
-                Learn more about Create T3 App, the libraries it uses, and how
-                to deploy it.
-              </div>
-            </Link>
+              Delete
+            </button>
           </div>
-          <div className="flex flex-col items-center gap-2">
-            <p className="text-2xl text-white">
-              {hello ? hello.greeting : "Loading tRPC query..."}
-            </p>
-          </div>
-
-          <LatestPost />
+          <p className="text-lg">
+            <strong>Joke:</strong> {joke.joke}
+          </p>
+          <p className="text-lg">
+            <strong>Funny because:</strong>
+            {joke.whyFunny}
+          </p>
         </div>
-      </main>
-    </HydrateClient>
+      ))}
+    </div>
   );
 }
