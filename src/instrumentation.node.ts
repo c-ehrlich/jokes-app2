@@ -3,6 +3,7 @@ import { Resource } from "@opentelemetry/resources";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { PrismaInstrumentation } from "@prisma/instrumentation";
 
 const sdk = new NodeSDK({
   resource: new Resource({
@@ -17,5 +18,6 @@ const sdk = new NodeSDK({
       },
     }),
   ),
+  instrumentations: [new PrismaInstrumentation()],
 });
 sdk.start();
